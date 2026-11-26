@@ -8,11 +8,41 @@ updates:
       day: monday
       time: '04:00'
     open-pull-requests-limit: 5
+    ignore:
+      # Framework + language majors are migrations, not bumps.
+      - dependency-name: 'next'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'react-dom'
+        update-types: ['version-update:semver-major']
+      # Must move together with React (peer: @types/react ^18).
+      - dependency-name: '@types/react'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@types/react-dom'
+        update-types: ['version-update:semver-major']
+      # Track the Node runtime we deploy on (20), not the newest types.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # ESLint 9/10 need a flat config and eslint-config-next@16.
+      - dependency-name: 'eslint'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'eslint-config-next'
+        update-types: ['version-update:semver-major']
+      # Jest 30 changes the next/jest transform contract.
+      - dependency-name: 'jest'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'jest-environment-jsdom'
+        update-types: ['version-update:semver-major']
     groups:
       nextjs:
         patterns:
           - 'next'
           - 'eslint-config-next'
+      react-types:
+        patterns:
+          - '@types/react'
+          - '@types/react-dom'
       testing:
         patterns:
           - 'jest*'
