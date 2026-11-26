@@ -163,11 +163,20 @@ jobs:
           exit-code: '0'
 
       - name: Upload Trivy results to code scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-filesystem
+
+      - name: Keep the SARIF report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-fs
+          path: trivy-fs.sarif
+          retention-days: 14
 
   docker:
     name: Docker image
@@ -226,12 +235,20 @@ jobs:
           exit-code: '0'
 
       - name: Upload image scan to code scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
 
+      - name: Keep the SARIF report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-image
+          path: trivy-image.sarif
+          retention-days: 14
       - name: Push image to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
