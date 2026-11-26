@@ -1,0 +1,27 @@
+/** @type {import('next').NextConfig} */
+
+// `output: 'standalone'` is required for the slim production Docker image.
+// It is switched on only for container builds (see Dockerfile) so that the
+// Vercel deployment keeps using Vercel's own build output.
+const isDockerBuild = process.env.NEXT_OUTPUT === 'standalone'
+
+const securityHeaders = [
+  { key: 'X-DNS-Prefetch-Control', value: 'on' },
+  { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+  { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(self)' },
+]
+
+const nextConfig = {
+  reactStrictMode: true,
+  poweredByHeader: false,
+  compress: true,
+  output: isDockerBuild ? 'standalone' : undefined,
+  async headers() {
+    return [{ source: '/:path*', headers: securityHeaders }]
+  },
+}
+
+module.exports = nextConfig

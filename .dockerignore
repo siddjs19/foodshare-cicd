@@ -1,0 +1,14 @@
+node_modules
+.next
+coverage
+.git
+.github
+.env*
+npm-debug.log*
+Dockerfile
+docker-compose.yml
+docs
+__tests__
+jest.config.js
+jest.setup.js
+README.md

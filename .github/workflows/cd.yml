@@ -1,0 +1,144 @@
+name: CD
+
+# ---------------------------------------------------------------------------
+# Continuous Delivery — runs only after the CI workflow finishes successfully.
+#   * pull_request  -> preview deployment on Vercel + comment with the URL
+#   * push to main  -> production deployment, post-deploy smoke test,
+#                      automatic rollback if the smoke test fails
+#
+# Required repository secrets:
+#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  deployments: write
+
+concurrency:
+  group: cd-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+jobs:
+  preview:
+    name: Preview deploy
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: preview
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Checkout the tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+
+      - name: Build for Vercel
+        run: vercel build --token="$VERCEL_TOKEN"
+
+      - name: Deploy preview
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Preview URL: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test the preview
+        run: BASE_URL="${{ steps.deploy.outputs.url }}" node scripts/smoke-test.mjs
+
+      - name: Comment the preview URL on the pull request
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          if [ -z "$PR_NUMBER" ] || [ -z "$PREVIEW_URL" ]; then
+            echo "No pull request number available — skipping comment."
+            exit 0
+          fi
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "🚀 Preview deployment for ${{ github.event.workflow_run.head_sha }}: $PREVIEW_URL"
+
+  production:
+    name: Production deploy
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Checkout the tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build for Vercel
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy to production
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Production URL: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test production
+        run: BASE_URL="${{ steps.deploy.outputs.url }}" node scripts/smoke-test.mjs
+
+      - name: Roll back on failed smoke test
+        if: failure() && steps.deploy.outcome == 'success'
+        run: |
+          echo "Smoke test failed — rolling production back to the previous deployment." | tee -a "$GITHUB_STEP_SUMMARY"
+          vercel rollback --yes --token="$VERCEL_TOKEN"
+          exit 1
+
+      - name: Deployment summary
+        if: success()
+        run: |
+          {
+            echo "### Production deployment"
+            echo "- Commit: \`${{ github.event.workflow_run.head_sha }}\`"
+            echo "- URL: ${{ steps.deploy.outputs.url }}"
+            echo "- Smoke test: passed"
+          } >> "$GITHUB_STEP_SUMMARY"

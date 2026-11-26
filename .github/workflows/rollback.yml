@@ -1,0 +1,54 @@
+name: Rollback
+
+# Manual, one-click rollback of the production deployment.
+# Actions -> Rollback -> Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_url:
+        description: 'Deployment URL to roll back to (leave empty for the previous production deployment)'
+        required: false
+        default: ''
+      reason:
+        description: 'Why is the rollback needed? (recorded in the run summary)'
+        required: true
+        default: 'Production incident'
+
+permissions:
+  contents: read
+  deployments: write
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+jobs:
+  rollback:
+    name: Roll back production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      TARGET: ${{ inputs.deployment_url }}
+    steps:
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Roll back
+        run: |
+          if [ -n "$TARGET" ]; then
+            vercel rollback "$TARGET" --yes --token="$VERCEL_TOKEN"
+          else
+            vercel rollback --yes --token="$VERCEL_TOKEN"
+          fi
+
+      - name: Record the rollback
+        run: |
+          {
+            echo '### Rollback'
+            echo "- Reason: ${{ inputs.reason }}"
+            echo "- Target: ${TARGET:-previous production deployment}"
+            echo "- Triggered by: @${{ github.actor }}"
+          } >> "$GITHUB_STEP_SUMMARY"
